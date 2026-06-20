@@ -1041,8 +1041,17 @@ export default function Home() {
 
         {!hasStarted && (
           <section className="entry-screen" onClick={(e) => e.stopPropagation()}>
+            <img
+              className="entry-cover-bg"
+              src="/images/home-cover-handdrawn.png"
+              alt=""
+            />
             <div className="entry-cover">
-              <img src="/images/home-cover-handdrawn.png" alt="" />
+              <img
+                className="entry-cover-main"
+                src="/images/home-cover-handdrawn.png"
+                alt=""
+              />
               <button
                 className="entry-hotspot entry-hotspot-sound"
                 type="button"
