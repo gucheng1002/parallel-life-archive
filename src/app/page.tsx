@@ -522,8 +522,12 @@ export default function Home() {
   const cardRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const morphRef = useRef<HTMLDivElement | null>(null);
   const morphImageRef = useRef<HTMLImageElement | null>(null);
+  const introVideoRef = useRef<HTMLVideoElement | null>(null);
   const finalTextRef = useRef<HTMLElement | null>(null);
   const archiveSavedRef = useRef(false);
+  const pendingIntroSoundRef = useRef(false);
+  const introAudioStartedRef = useRef(false);
+  const introStartTimeRef = useRef(0);
 
   const currentAnswer = nodeAnswers[questionIndex] ?? { choice: "", note: "" };
   const currentQuestion = finalTitle?.questions[questionIndex];
@@ -569,6 +573,10 @@ export default function Home() {
   }, []);
 
   function startExperience(enableSound: boolean) {
+    pendingIntroSoundRef.current = enableSound;
+    introAudioStartedRef.current = false;
+    introStartTimeRef.current = 0;
+
     flushSync(() => {
       setSoundEnabled(enableSound);
       setHasStarted(true);
@@ -589,7 +597,34 @@ export default function Home() {
       archiveSavedRef.current = false;
     });
 
-    audioManager.startIntroAudio(enableSound);
+    audioManager.prepareIntroAudio(enableSound);
+
+    const video = introVideoRef.current;
+    if (!video) return;
+
+    try {
+      video.currentTime = 0;
+    } catch (error) {
+      console.warn("[intro] video reset failed", error);
+    }
+
+    const playRequest = video.play();
+    if (playRequest) {
+      void playRequest.catch((error) => {
+        console.warn("[intro] video play failed", error);
+      });
+    }
+  }
+
+  function handleIntroPlaybackStarted() {
+    if (introAudioStartedRef.current) return;
+
+    introAudioStartedRef.current = true;
+    introStartTimeRef.current = performance.now();
+    audioManager.startIntroAudio(
+      pendingIntroSoundRef.current,
+      introStartTimeRef.current
+    );
   }
 
   function persistArchives(nextArchives: ArchiveRecord[]) {
@@ -1075,12 +1110,14 @@ export default function Home() {
             }`}
           >
             <video
+              ref={introVideoRef}
               className="intro-video"
               src="/videos/intro-photo-drop.mp4"
               autoPlay
               muted
               playsInline
               preload="auto"
+              onPlaying={handleIntroPlaybackStarted}
               onEnded={(event) => {
                 event.currentTarget.pause();
                 audioManager.returnSelectionAudio();

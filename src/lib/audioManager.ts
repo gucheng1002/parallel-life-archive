@@ -197,52 +197,71 @@ class AudioManager {
     this.voiceDuckCount = 0;
   }
 
-  startIntroAudio(enabled = true) {
+  prepareIntroAudio(enabled = true) {
     this.enabled = enabled;
     this.stop();
 
     if (!this.enabled) return;
 
     this.loadAll();
+  }
+
+  startIntroAudio(enabled = true, introStartTime = performance.now()) {
+    this.prepareIntroAudio(enabled);
+
+    if (!this.enabled) return;
+
+    const elapsed = Math.max(0, performance.now() - introStartTime);
+    const scheduleAt = (delayMs: number, callback: () => void) => {
+      const remainingMs = delayMs - elapsed;
+
+      if (remainingMs <= 0) {
+        callback();
+        return;
+      }
+
+      this.schedule(remainingMs, callback);
+    };
+
     this.playLoop("roomTone", 0.18);
 
-    this.schedule(2000, () => {
+    scheduleAt(2000, () => {
       this.playVoice("voicePrepare", 0.75);
     });
 
-    this.schedule(5300, () => {
+    scheduleAt(5300, () => {
       this.playSfx("cameraShutter", 0.65);
       this.playSfx("flashSoft", 0.35);
     });
 
-    this.schedule(6300, () => {
+    scheduleAt(6300, () => {
       this.playVoice("voiceConfirming", 0.72);
     });
 
-    this.schedule(8000, () => {
+    scheduleAt(8000, () => {
       this.playLoop("waterRipple", 0);
       this.fadeTo("waterRipple", 0.28, 4200);
     });
 
-    this.schedule(8300, () => {
+    scheduleAt(8300, () => {
       this.playVoice("voiceFailed", 0.75);
     });
 
-    this.schedule(10300, () => {
+    scheduleAt(10300, () => {
       this.playVoice("voiceReconfirm", 0.72);
     });
 
-    this.schedule(13000, () => {
+    scheduleAt(13000, () => {
       this.playLoop("distantOcean", 0);
       this.fadeTo("distantOcean", 0.22, 5200);
     });
 
-    this.schedule(18000, () => {
+    scheduleAt(18000, () => {
       this.playSfx("cameraShutter", 0.45);
       this.playSfx("flashSoft", 0.25);
     });
 
-    this.schedule(25000, () => {
+    scheduleAt(25000, () => {
       this.returnSelectionAudio();
     });
   }
