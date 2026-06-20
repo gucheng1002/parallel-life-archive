@@ -2,6 +2,7 @@
 
 import type { AnimationEvent, CSSProperties, SyntheticEvent } from "react";
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import gsap from "gsap";
 import { audioManager } from "@/lib/audioManager";
 
@@ -304,6 +305,13 @@ type PageStyle = CSSProperties & {
   "--page-bg": string;
   "--node-photo": string;
 };
+
+type ArchiveInsight = {
+  analysis: string;
+  keywords: [string, string, string];
+  finalLine: string;
+};
+
 function getCardById(nodeId: string) {
   const normalizedId =
     nodeId === "person" ? "oldname" : nodeId === "self" ? "fork" : nodeId;
@@ -322,6 +330,136 @@ function getArchiveSummary(card: (typeof cards)[number]) {
   };
 
   return summaries[card.id] ?? "这张照片保存了一条没有完全消失的人生线。";
+}
+
+function stripChoiceLabel(choice: string) {
+  return choice.replace(/^[A-D]\.\s*/, "");
+}
+
+function archiveHasAny(archive: ArchiveRecord, words: string[]) {
+  const content = archive.answers
+    .map((answer) => `${answer.choice} ${answer.note}`)
+    .join(" ");
+
+  return words.some((word) => content.includes(word));
+}
+
+function getArchiveInsight(archive: ArchiveRecord): ArchiveInsight {
+  const card = getCardById(archive.nodeId);
+
+  if (card.id === "faraway") {
+    if (archiveHasAny(archive, ["逃离", "换一种生活", "还是会想离开"])) {
+      return {
+        analysis:
+          "这张远方照片里，地点并不是最重要的部分。你想抵达的不是某个坐标，而是一种终于可以离开原地的许可。你并不确定那里会不会更好，只是现在的生活曾经太久地要求你留下。",
+        keywords: ["迟到的出发", "逃离感", "另一种生活"],
+        finalLine: "远方没有消失，它只是一直在等你重新辨认方向。",
+      };
+    }
+
+    if (archiveHasAny(archive, ["没抵达也不是失败", "已经走了很远"])) {
+      return {
+        analysis:
+          "这张照片没有把远方拍成一个答案。它更像一份迟到的证明：有些地方没有抵达，也不等于那段向往失败了。你已经在很多看不见的地方移动过，只是还没有把它称作出发。",
+        keywords: ["未抵达", "已在路上", "自我许可"],
+        finalLine: "没去成的地方，也可能保存着你走过的痕迹。",
+      };
+    }
+
+    return {
+      analysis:
+        "这张照片保留了一次没有发生的出发。你想看的不是那个地方究竟有多好，而是如果当时真的走过去，你会不会更早认出一个不同的自己。",
+      keywords: ["远方", "迟到", "可能性"],
+      finalLine: "有些远方没有抵达，但它仍然改变过你。",
+    };
+  }
+
+  if (card.id === "oldname") {
+    if (archiveHasAny(archive, ["陌生", "不知道该怎么面对", "不确定是否属于"])) {
+      return {
+        analysis:
+          "旧名不是一个简单的过去。它像一间灯没有完全关上的房间，你知道里面有个自己曾经住过，却不确定现在是否还能推门进去。你不是忘了它，只是还没找到一种不尴尬的方式承认它仍属于你。",
+        keywords: ["旧名", "陌生感", "未完成的自己"],
+        finalLine: "那个名字没有消失，它只是很久没有被你叫出口。",
+      };
+    }
+
+    if (archiveHasAny(archive, ["还敢开始", "没有被打断", "不需要解释"])) {
+      return {
+        analysis:
+          "这张照片显影出的不是另一个更成功的你，而是一个没有被中途打断的你。那个旧名留下的，是开始之前的勇气，是还不急着解释自己的清澈。",
+        keywords: ["曾经的自己", "开始", "未被打断"],
+        finalLine: "旧名把一个很久以前的自己，轻轻放回你手里。",
+      };
+    }
+
+    return {
+      analysis:
+        "这张照片记录了一个没有成为的人。它不一定比现在更好，却让你看见：你曾经认真靠近过另一种身份，只是后来把它收进了更安静的地方。",
+      keywords: ["旧名", "身份", "另一种自己"],
+      finalLine: "没成为的那个人，也曾真实地经过你。",
+    };
+  }
+
+  if (card.id === "unsent") {
+    if (archiveHasAny(archive, ["怕打扰", "不用回信", "已经不需要收到", "告别"])) {
+      return {
+        analysis:
+          "你留下的不是一句没有说出口的话，而是一种把关系停在原地的方式。你不是没有想过靠近，只是你更害怕一句话说出口后，连现在保留的距离也失去。",
+        keywords: ["沉默", "不再打扰", "保留"],
+        finalLine: "有些话没有寄出，是因为你也在保护剩下的距离。",
+      };
+    }
+
+    if (archiveHasAny(archive, ["也许什么都不会改变", "看到就好", "过去的自己"])) {
+      return {
+        analysis:
+          "这张照片里没有寄出的内容，最后变成了一种轻轻放下。你没有把所有话都交给对方，也没有再强迫自己等一个回音。它更像写给自己的回执：我曾经在意过，这件事已经足够。",
+        keywords: ["释怀", "回音", "写给自己"],
+        finalLine: "没寄出的那句话，最后被你自己收到了。",
+      };
+    }
+
+    return {
+      analysis:
+        "这张照片留下了一句没有寄出的内容。它没有消失，只是还在等纸面干透。你曾经想把它交出去，后来又把它留在了自己这里。",
+      keywords: ["未寄出", "关系", "纸面未干"],
+      finalLine: "有些沉默不是空白，是被折起来保存的证词。",
+    };
+  }
+
+  if (card.id === "fork") {
+    if (archiveHasAny(archive, ["不再让别人替我选", "不是只有一种可能", "重新选择"])) {
+      return {
+        analysis:
+          "岔路显影以后，重点不在于推翻过去。它更像一份迟来的权限：你开始意识到，人生不是只能沿着已经发生的那条线继续服从下去。下一段路，仍然可以由你重新握住方向。",
+        keywords: ["重新选择", "分叉", "权限"],
+        finalLine: "没走的路提醒你：下一次，可以更像自己地选择。",
+      };
+    }
+
+    if (archiveHasAny(archive, ["当时只能那样", "已经尽力", "另一条路也不一定更好"])) {
+      return {
+        analysis:
+          "这张岔路照片没有责怪过去的你。它只是把另一条路显影出来，让你看见：当时的选择也许不完美，但那时的你已经用手里有限的光，照过能看见的地方。",
+        keywords: ["当时如此", "尽力", "和解"],
+        finalLine: "另一条路存在，不代表现在这条路就该被否定。",
+      };
+    }
+
+    return {
+      analysis:
+        "这张照片停在一个没有完全结束的岔路口。你回看的不是一个简单的对错，而是那些被选择牵动过的关系、责任和害怕。没走的路仍然亮着一点光，但它不催你回头，只提醒你还有选择的能力。",
+      keywords: ["岔路", "没选择的路", "回看"],
+      finalLine: "人生的分叉没有消失，它只是换成了下一次选择。",
+    };
+  }
+
+  return {
+    analysis: archive.summary || getArchiveSummary(card),
+    keywords: ["未显影", "档案", "回声"],
+    finalLine: archive.summary || "这份档案保存了一条没有完全消失的人生线。",
+  };
 }
 
 function formatArchiveTime(value: string) {
@@ -431,25 +569,27 @@ export default function Home() {
   }, []);
 
   function startExperience(enableSound: boolean) {
-    setSoundEnabled(enableSound);
-    audioManager.startIntroAudio(enableSound);
+    flushSync(() => {
+      setSoundEnabled(enableSound);
+      setHasStarted(true);
+      setIntroDone(false);
+      setIntroVideoEnded(false);
+      setIsStackOpen(false);
+      setHasInteractedWithStack(false);
+      setSelectedId(null);
+      setIsTransitioning(false);
+      setFinalTitle(null);
+      setNodeView("start");
+      setQuestionIndex(0);
+      setNodeAnswers([]);
+      setQuestionWarning(false);
+      setCurrentArchive(null);
+      setViewingArchive(null);
+      setCopyStatus("");
+      archiveSavedRef.current = false;
+    });
 
-    setHasStarted(true);
-    setIntroDone(false);
-    setIntroVideoEnded(false);
-    setIsStackOpen(false);
-    setHasInteractedWithStack(false);
-    setSelectedId(null);
-    setIsTransitioning(false);
-    setFinalTitle(null);
-    setNodeView("start");
-    setQuestionIndex(0);
-    setNodeAnswers([]);
-    setQuestionWarning(false);
-    setCurrentArchive(null);
-    setViewingArchive(null);
-    setCopyStatus("");
-    archiveSavedRef.current = false;
+    audioManager.startIntroAudio(enableSound);
   }
 
   function persistArchives(nextArchives: ArchiveRecord[]) {
@@ -471,15 +611,7 @@ export default function Home() {
     });
     const openAnswer =
       answers[answers.length - 1]?.note.trim() || "未填写";
-    const summary = getArchiveSummary(finalTitle);
-    const shareText = [
-      "你的未显影档案",
-      finalTitle.short,
-      summary,
-      `开放题：${openAnswer}`,
-    ].join("\n");
-
-    return {
+    const record: ArchiveRecord = {
       id: `${Date.now()}-${finalTitle.id}-${Math.random()
         .toString(36)
         .slice(2, 8)}`,
@@ -488,10 +620,23 @@ export default function Home() {
       nodeTitle: finalTitle.short,
       answers,
       openAnswer,
-      resultText: summary,
-      summary,
-      shareText,
+      resultText: "",
+      summary: "",
+      shareText: "",
     };
+    const insight = getArchiveInsight(record);
+
+    record.resultText = insight.analysis;
+    record.summary = insight.finalLine;
+    record.shareText = [
+      "你的未显影档案",
+      finalTitle.short,
+      insight.analysis,
+      insight.finalLine,
+      `开放题：${openAnswer}`,
+    ].join("\n");
+
+    return record;
   }
 
   function finishArchive() {
@@ -543,22 +688,46 @@ export default function Home() {
     const archiveCard = getCardById(archive.nodeId);
 
     return (
-      <div className="result-inputs">
-        {archiveCard.questions.map((question, index) => {
-          const answer = archive.answers[index];
-          const isLastQuestion = index === archiveCard.questions.length - 1;
+      <details className="result-trace">
+        <summary>你的选择痕迹</summary>
+        <div className="result-inputs">
+          {archiveCard.questions.map((question, index) => {
+            const answer = archive.answers[index];
+            const isLastQuestion = index === archiveCard.questions.length - 1;
 
-          return (
-            <p key={`${archive.id}-${question.title}`}>
-              <span>
-                {index + 1}. {question.title}
-              </span>
-              <strong>{answer?.choice || "未选择"}</strong>
-              {isLastQuestion && <em>{archive.openAnswer || "未填写"}</em>}
-            </p>
-          );
-        })}
-      </div>
+            return (
+              <p key={`${archive.id}-${question.title}`}>
+                <span>
+                  {index + 1}. {question.title}
+                </span>
+                <strong>{stripChoiceLabel(answer?.choice || "未选择")}</strong>
+                {isLastQuestion && <em>{archive.openAnswer || "未填写"}</em>}
+              </p>
+            );
+          })}
+        </div>
+      </details>
+    );
+  }
+
+  function renderArchiveResultBody(archive: ArchiveRecord) {
+    const card = getCardById(archive.nodeId);
+    const insight = getArchiveInsight(archive);
+
+    return (
+      <>
+        <div className="result-photo-box">
+          <img src={card.resultPaper} alt={`${archive.nodeTitle}最终显影相纸`} />
+        </div>
+        <p className="result-copy">{insight.analysis}</p>
+        <div className="result-tags" aria-label="档案关键词">
+          {insight.keywords.map((keyword) => (
+            <span key={keyword}>{keyword}</span>
+          ))}
+        </div>
+        <p className="result-final-line">{insight.finalLine}</p>
+        {renderArchiveAnswers(archive)}
+      </>
     );
   }
 
@@ -636,9 +805,13 @@ export default function Home() {
 
     const stageRect = stageEl.getBoundingClientRect();
     const cardRect = clickedEl.getBoundingClientRect();
+    const cardWidth = clickedEl.offsetWidth;
+    const cardHeight = clickedEl.offsetHeight;
 
-    const startLeft = cardRect.left - stageRect.left;
-    const startTop = cardRect.top - stageRect.top;
+    const startLeft =
+      cardRect.left - stageRect.left + cardRect.width / 2 - cardWidth / 2;
+    const startTop =
+      cardRect.top - stageRect.top + cardRect.height / 2 - cardHeight / 2;
 
     const otherImages = cards
       .filter((item) => item.id !== card.id)
@@ -650,8 +823,8 @@ export default function Home() {
       display: "block",
       left: startLeft,
       top: startTop,
-      width: cardRect.width,
-      height: cardRect.height,
+      width: cardWidth,
+      height: cardHeight,
       borderRadius: 12,
       rotateY: 0,
       opacity: 1,
@@ -1135,13 +1308,11 @@ export default function Home() {
                 <div className="result-placeholder">
                   <p className="node-kicker">{finalTitle.subtitle}</p>
                   <h1 className="archive-title">你的未显影档案</h1>
-                  <div className="result-photo-box">
-                    <img src={finalTitle.resultPaper} alt={`${finalTitle.short}最终显影相纸`} />
-                  </div>
-                  <p className="result-copy">
-                    {activeArchive?.summary ?? getArchiveSummary(finalTitle)}
-                  </p>
-                  {activeArchive && renderArchiveAnswers(activeArchive)}
+                  {activeArchive ? (
+                    renderArchiveResultBody(activeArchive)
+                  ) : (
+                    <p className="result-copy">{getArchiveSummary(finalTitle)}</p>
+                  )}
                   <div className="result-actions">
                     <button
                       onClick={(e) => {
@@ -1154,19 +1325,29 @@ export default function Home() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        returnToPhotoPile();
+                        setNodeView("history");
                       }}
                     >
-                      保存并返回照片纸
+                      返回档案
                     </button>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        setNodeView("history");
+                        returnToPhotoPile();
                       }}
                     >
-                      查看全部档案
+                      返回照片纸
                     </button>
+                    {canCopy && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void copyArchiveText(activeArchive);
+                        }}
+                      >
+                        {copyStatus || "复制结果文字"}
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
@@ -1272,14 +1453,7 @@ export default function Home() {
                     {formatArchiveTime(activeArchive.createdAt)}
                   </p>
                   <h1 className="archive-title">你的未显影档案</h1>
-                  <div className="result-photo-box">
-                    <img
-                      src={getCardById(activeArchive.nodeId).resultPaper}
-                      alt={`${activeArchive.nodeTitle}最终显影相纸`}
-                    />
-                  </div>
-                  <p className="result-copy">{activeArchive.summary}</p>
-                  {renderArchiveAnswers(activeArchive)}
+                  {renderArchiveResultBody(activeArchive)}
                   <div className="result-actions">
                     <button
                       onClick={(e) => {
@@ -1295,7 +1469,7 @@ export default function Home() {
                         setNodeView("history");
                       }}
                     >
-                      返回列表
+                      返回档案
                     </button>
                     <button
                       onClick={(e) => {
@@ -1305,6 +1479,16 @@ export default function Home() {
                     >
                       返回照片纸
                     </button>
+                    {canCopy && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void copyArchiveText(activeArchive);
+                        }}
+                      >
+                        {copyStatus || "复制结果文字"}
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
