@@ -264,6 +264,8 @@ const cards = [
 
 const revealPieceIndexes = [1, 2, 3, 4, 5] as const;
 const ARCHIVE_STORAGE_KEY = "parallel-life-archives";
+const NODE_PREVIEW_ORDER = ["faraway", "oldname", "unsent", "fork"] as const;
+const PREVIEW_FRAME_DURATION = 0.14;
 
 type ProofCardStyle = CSSProperties & {
   "--stack-left": string;
@@ -480,7 +482,10 @@ function formatArchiveTime(value: string) {
 export default function Home() {
   const [hasStarted, setHasStarted] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [previewNodeId, setPreviewNodeId] = useState<string | null>(null);
+  const [isResolvingSelection, setIsResolvingSelection] = useState(false);
+  const [isFlipping, setIsFlipping] = useState(false);
   const [finalTitle, setFinalTitle] = useState<(typeof cards)[number] | null>(
     null
   );
@@ -523,11 +528,15 @@ export default function Home() {
   const morphRef = useRef<HTMLDivElement | null>(null);
   const morphImageRef = useRef<HTMLImageElement | null>(null);
   const introVideoRef = useRef<HTMLVideoElement | null>(null);
+  const transitionTimelineRef = useRef<ReturnType<typeof gsap.timeline> | null>(
+    null
+  );
   const finalTextRef = useRef<HTMLElement | null>(null);
   const archiveSavedRef = useRef(false);
   const pendingIntroSoundRef = useRef(false);
   const introAudioStartedRef = useRef(false);
   const introStartTimeRef = useRef(0);
+  const isEnteringNodeRef = useRef(false);
 
   const currentAnswer = nodeAnswers[questionIndex] ?? { choice: "", note: "" };
   const currentQuestion = finalTitle?.questions[questionIndex];
@@ -560,7 +569,9 @@ export default function Home() {
   const proofAreaClassName = [
     "proof-area",
     isStackOpen ? "is-open" : "is-stacked",
-    selectedId ? "has-selection" : "",
+    selectedNodeId ? "has-selection" : "",
+    isResolvingSelection ? "is-resolving" : "",
+    isFlipping ? "is-flipping" : "",
     hasInteractedWithStack ? "has-interacted" : "",
   ]
     .filter(Boolean)
@@ -584,7 +595,10 @@ export default function Home() {
       setIntroVideoEnded(false);
       setIsStackOpen(false);
       setHasInteractedWithStack(false);
-      setSelectedId(null);
+      setSelectedNodeId(null);
+      setPreviewNodeId(null);
+      setIsResolvingSelection(false);
+      setIsFlipping(false);
       setIsTransitioning(false);
       setFinalTitle(null);
       setNodeView("start");
@@ -774,7 +788,10 @@ export default function Home() {
     setIntroVideoEnded(false);
     setHasInteractedWithStack(true);
     setIsStackOpen(false);
-    setSelectedId(null);
+    setSelectedNodeId(null);
+    setPreviewNodeId(null);
+    setIsResolvingSelection(false);
+    setIsFlipping(false);
     window.requestAnimationFrame(() => {
       window.requestAnimationFrame(() => {
         setIsStackOpen(true);
@@ -786,8 +803,9 @@ export default function Home() {
     if (isFinalDeveloping) return;
     if (!introDone || isTransitioning) return;
 
-    if (selectedId) {
-      setSelectedId(null);
+    if (selectedNodeId) {
+      setSelectedNodeId(null);
+      setPreviewNodeId(null);
       setIsStackOpen(false);
       return;
     }
@@ -804,20 +822,19 @@ export default function Home() {
     if (!isStackOpen) {
       setHasInteractedWithStack(true);
       setIsStackOpen(true);
-      setSelectedId(null);
+      setSelectedNodeId(null);
+      setPreviewNodeId(null);
       return;
     }
 
-    if (selectedId !== card.id) {
-      setSelectedId(card.id);
-      return;
-    }
-
-    enterPhoto(card);
+    enterPhoto(card.id);
   }
 
-  function enterPhoto(card: (typeof cards)[number]) {
+  function enterPhoto(nodeId: string) {
     if (isFinalDeveloping) return;
+    if (isEnteringNodeRef.current) return;
+
+    const card = getCardById(nodeId);
 
     const stageEl = stageRef.current;
     const clickedEl = cardRefs.current[card.id];
@@ -826,6 +843,12 @@ export default function Home() {
 
     if (!stageEl || !clickedEl || !morphEl || !morphImg) return;
 
+    isEnteringNodeRef.current = true;
+    transitionTimelineRef.current?.kill();
+    setSelectedNodeId(card.id);
+    setPreviewNodeId(card.id);
+    setIsResolvingSelection(true);
+    setIsFlipping(false);
     audioManager.enterQuizAudio();
     setIsTransitioning(true);
     setFinalTitle(null);
@@ -848,12 +871,16 @@ export default function Home() {
       cardRect.left - stageRect.left + cardRect.width / 2 - cardWidth / 2;
     const startTop =
       cardRect.top - stageRect.top + cardRect.height / 2 - cardHeight / 2;
-
-    const otherImages = cards
+    const otherCardEls = cards
       .filter((item) => item.id !== card.id)
-      .map((item) => item.backImage);
+      .map((item) => cardRefs.current[item.id])
+      .filter((el): el is HTMLButtonElement => Boolean(el));
 
-    const allFlowImages = [...otherImages, card.backImage];
+    const selectedNodeImage = card.backImage;
+    const previewSequence = [
+      ...NODE_PREVIEW_ORDER,
+      ...NODE_PREVIEW_ORDER.slice(0, 2),
+    ];
 
     gsap.set(morphEl, {
       display: "block",
@@ -865,6 +892,9 @@ export default function Home() {
       rotateY: 0,
       opacity: 1,
       zIndex: 20,
+      transformOrigin: "50% 50%",
+      transformStyle: "preserve-3d",
+      transformPerspective: 1000,
     });
 
     gsap.set(morphImg, {
@@ -873,9 +903,11 @@ export default function Home() {
       filter: "blur(0px) saturate(0.9) contrast(0.96) brightness(0.96)",
     });
 
-    morphImg.src = card.frontImage;
+    morphImg.src = getCardById(previewSequence[0]).backImage;
+    setPreviewNodeId(previewSequence[0]);
 
     const tl = gsap.timeline();
+    transitionTimelineRef.current = tl;
 
     tl.to(clickedEl, {
       scale: 1.08,
@@ -883,8 +915,26 @@ export default function Home() {
       ease: "power2.out",
     });
 
+    tl.set(clickedEl, {
+      opacity: 0,
+    });
+
     tl.to(
-      ".proof-card:not(.is-selected)",
+      morphEl,
+      {
+        left: "5%",
+        top: "14%",
+        width: "90%",
+        height: "58%",
+        borderRadius: 22,
+        duration: 0.28,
+        ease: "power3.out",
+      },
+      0
+    );
+
+    tl.to(
+      otherCardEls,
       {
         scale: 1.04,
         opacity: 0.55,
@@ -895,49 +945,73 @@ export default function Home() {
       "-=0.08"
     );
 
+    previewSequence.forEach((previewId) => {
+      const previewImage = getCardById(previewId).backImage;
+
+      tl.call(() => {
+        setPreviewNodeId(previewId);
+        morphImg.src = previewImage;
+      });
+
+      tl.fromTo(
+        morphImg,
+        {
+          opacity: 0.72,
+          scale: 1.018,
+          filter: "blur(3px) saturate(0.74) contrast(0.82) brightness(0.82)",
+        },
+        {
+          opacity: 1,
+          scale: 1,
+          filter: "blur(1px) saturate(0.82) contrast(0.9) brightness(0.88)",
+          duration: PREVIEW_FRAME_DURATION,
+          ease: "none",
+        }
+      );
+    });
+
+    tl.call(() => {
+      setPreviewNodeId(card.id);
+      morphImg.src = selectedNodeImage;
+      gsap.set(morphImg, {
+        opacity: 1,
+        scale: 1,
+        filter: "blur(1px) saturate(0.82) contrast(0.9) brightness(0.88)",
+      });
+    });
+
+    tl.to(morphImg, {
+      opacity: 1,
+      duration: 0.2,
+      ease: "power1.out",
+    });
+
+    tl.call(() => {
+      setIsResolvingSelection(false);
+      setIsFlipping(true);
+    });
+
     tl.to(morphEl, {
       rotateY: 90,
-      duration: 0.28,
+      duration: 0.31,
       ease: "power2.in",
-      onComplete: () => {
-        morphImg.src = card.backImage;
-        gsap.set(morphImg, {
-          filter: "blur(7px) saturate(0.68) contrast(0.78) brightness(0.72)",
-        });
-      },
+    });
+
+    tl.call(() => {
+      morphImg.src = selectedNodeImage;
+      gsap.set(morphImg, {
+        filter: "blur(6px) saturate(0.7) contrast(0.8) brightness(0.74)",
+      });
     });
 
     tl.to(morphEl, {
       rotateY: 0,
-      duration: 0.34,
+      duration: 0.31,
       ease: "power2.out",
     });
 
-    tl.to(morphEl, {
-      left: "5%",
-      top: "14%",
-      width: "90%",
-      height: "58%",
-      borderRadius: 22,
-      duration: 0.65,
-      ease: "power3.inOut",
-    });
-
-    allFlowImages.forEach((src, index) => {
-      tl.to(morphImg, {
-        opacity: 0,
-        duration: 0.08,
-        onComplete: () => {
-          morphImg.src = src;
-        },
-      });
-
-      tl.to(morphImg, {
-        opacity: 1,
-        scale: index === allFlowImages.length - 1 ? 1 : 1.035,
-        duration: 0.2,
-        ease: "power1.out",
-      });
+    tl.call(() => {
+      setIsFlipping(false);
     });
 
     tl.to(morphEl, {
@@ -946,20 +1020,24 @@ export default function Home() {
       width: "100%",
       height: "100%",
       borderRadius: 0,
-      duration: 0.7,
+      duration: 0.58,
       ease: "power3.inOut",
     });
 
     tl.to(morphImg, {
       scale: 1.06,
       filter: "blur(8px) saturate(0.66) contrast(0.76) brightness(0.7)",
-      duration: 1.2,
+      duration: 0.7,
       ease: "power1.out",
     });
 
     tl.call(() => {
+      morphImg.src = selectedNodeImage;
       setNodeView("start");
       setFinalTitle(card);
+      setIsTransitioning(false);
+      transitionTimelineRef.current = null;
+      isEnteringNodeRef.current = false;
     });
 
     tl.fromTo(
@@ -978,6 +1056,12 @@ export default function Home() {
     if (isFinalDeveloping) return;
     if (!morphRef.current) return;
 
+    transitionTimelineRef.current?.kill();
+    transitionTimelineRef.current = null;
+    isEnteringNodeRef.current = false;
+    setPreviewNodeId(null);
+    setIsResolvingSelection(false);
+    setIsFlipping(false);
     audioManager.returnSelectionAudio();
 
     gsap.set(morphRef.current, {
@@ -1003,7 +1087,7 @@ export default function Home() {
       });
     }
 
-    setSelectedId(null);
+    setSelectedNodeId(null);
     setIsStackOpen(true);
     setHasInteractedWithStack(true);
     setFinalTitle(null);
@@ -1021,7 +1105,7 @@ export default function Home() {
 
   function returnToPhotoPile(nextSelectedId: string | null = null) {
     resetScene();
-    setSelectedId(nextSelectedId);
+    setSelectedNodeId(nextSelectedId);
   }
 
   function updateCurrentAnswer(patch: Partial<NodeAnswer>) {
@@ -1142,7 +1226,10 @@ export default function Home() {
         )}
 
         {introDone && !finalTitle && (
-          <section className={proofAreaClassName}>
+          <section
+            className={proofAreaClassName}
+            data-preview-node-id={previewNodeId ?? undefined}
+          >
             <div className="proof-sheet">
               {cards.map((card, index) => {
                 const cardStyle: ProofCardStyle = {
@@ -1165,7 +1252,7 @@ export default function Home() {
                       cardRefs.current[card.id] = el;
                     }}
                     className={`proof-card ${
-                      selectedId === card.id ? "is-selected" : ""
+                      selectedNodeId === card.id ? "is-selected" : ""
                     }`}
                     style={cardStyle}
                     aria-label={`${card.short}，${card.subtitle}`}
