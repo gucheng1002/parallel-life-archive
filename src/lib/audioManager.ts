@@ -36,6 +36,7 @@ class AudioManager {
   private fadeFrames = new Map<AudioKey, number>();
   private desiredVolumes = new Map<AudioKey, number>();
   private introTriggered = new Set<string>();
+  private introFrame: number | null = null;
   private voiceDuckCount = 0;
 
   loadAudio(key: AudioKey) {
@@ -188,6 +189,7 @@ class AudioManager {
     }
 
     this.clearTimers();
+    this.cancelIntroTimeline();
     this.fadeFrames.forEach((frame) => window.cancelAnimationFrame(frame));
     this.fadeFrames.clear();
     this.tracks.forEach((audio) => {
@@ -206,6 +208,9 @@ class AudioManager {
     if (!this.enabled) return;
 
     this.loadAudio("roomTone");
+    this.loadAudio("voicePrepare");
+    this.loadAudio("voiceConfirming");
+    this.loadAudio("voiceFailed");
     this.loadAudio("cameraShutter");
     this.loadAudio("flashSoft");
     this.loadAudio("waterRipple");
@@ -213,54 +218,141 @@ class AudioManager {
   }
 
   startIntroAudio(enabled = true, introStartTime = performance.now()) {
-    this.prepareIntroAudio(enabled);
+    this.enabled = enabled;
+    this.clearTimers();
+    this.cancelIntroTimeline();
+    this.introTriggered.clear();
 
     if (!this.enabled) return;
 
-    const elapsed = Math.max(0, performance.now() - introStartTime);
-    const scheduleAt = (delayMs: number, callback: () => void) => {
-      const remainingMs = delayMs - elapsed;
+    this.loadAudio("roomTone");
+    this.loadAudio("voicePrepare");
+    this.loadAudio("voiceConfirming");
+    this.loadAudio("voiceFailed");
+    this.loadAudio("cameraShutter");
+    this.loadAudio("flashSoft");
+    this.loadAudio("waterRipple");
+    this.loadAudio("distantOcean");
 
-      if (remainingMs <= 0) {
-        callback();
+    const tick = () => {
+      if (!this.enabled) return;
+
+      const elapsed = (performance.now() - introStartTime) / 1000;
+
+      this.triggerIntroOnce("room-tone", () => {
+        console.log("[AUDIO] 0s intro start");
+        this.playLoop("roomTone", 0.09);
+      });
+
+      if (elapsed >= 0.6) {
+        this.triggerIntroOnce("voicePrepareTriggered", () => {
+          this.playVoice("voicePrepare", 0.72);
+        });
+      }
+
+      if (elapsed >= 1.6) {
+        this.triggerIntroOnce("voiceConfirmingTriggered", () => {
+          this.playVoice("voiceConfirming", 0.7);
+        });
+      }
+
+      if (elapsed >= 4.8) {
+        this.triggerIntroOnce("autofocusTriggered", () => {
+          console.log("[AUDIO] 4.8s autofocus");
+        });
+      }
+
+      if (elapsed >= 5.3) {
+        this.triggerIntroOnce("shutterTriggered", () => {
+          console.log("[AUDIO] 5.3s shutter flash");
+          this.playSfx("cameraShutter", 0.64);
+          this.playSfx("flashSoft", 0.36);
+        });
+      }
+
+      if (elapsed >= 5.8) {
+        this.triggerIntroOnce("introMusicTriggered", () => {
+          this.playLoop("quizBgm", 0);
+          this.fadeTo("quizBgm", 0.08, 2200);
+        });
+      }
+
+      if (elapsed >= 6.4) {
+        this.triggerIntroOnce("voiceFailedTriggered", () => {
+          this.playVoice("voiceFailed", 0.7);
+        });
+      }
+
+      if (elapsed >= 8) {
+        this.triggerIntroOnce("waterTriggered", () => {
+          console.log("[AUDIO] 8s water ripple");
+          this.playLoop("waterRipple", 0);
+          this.fadeTo("waterRipple", 0.18, 2600);
+        });
+      }
+
+      if (elapsed >= 12.8) {
+        this.triggerIntroOnce("oceanTriggered", () => {
+          console.log("[AUDIO] 12.8s distant ocean");
+          this.playLoop("distantOcean", 0);
+          this.fadeTo("distantOcean", 0.13, 3200);
+          this.fadeTo("quizBgm", 0.12, 2800);
+        });
+      }
+
+      if (elapsed >= 16) {
+        this.triggerIntroOnce("introSpaceTriggered", () => {
+          this.fadeTo("quizBgm", 0.16, 1500);
+          this.fadeTo("roomTone", 0.06, 1500);
+        });
+      }
+
+      if (elapsed >= 18) {
+        this.triggerIntroOnce("secondShutterTriggered", () => {
+          console.log("[AUDIO] 18s second shutter");
+          this.playSfx("cameraShutter", 0.48);
+          this.playSfx("flashSoft", 0.22);
+        });
+      }
+
+      if (elapsed >= 18.5) {
+        this.triggerIntroOnce("printerTriggered", () => {
+          console.log("[AUDIO] 18.5s printer");
+        });
+      }
+
+      if (elapsed >= 20.5) {
+        this.triggerIntroOnce("paperDropTriggered", () => {
+          console.log("[AUDIO] 20.5s paper drop");
+          this.playSfx("waterRipple", 0.16);
+        });
+      }
+
+      if (elapsed >= 23.5) {
+        this.triggerIntroOnce("waitingAmbienceTriggered", () => {
+          this.fadeTo("quizBgm", 0.06, 1600);
+          this.fadeTo("waterRipple", 0.13, 1600);
+          this.fadeTo("distantOcean", 0.09, 1600);
+        });
+      }
+
+      if (elapsed >= 25.7) {
+        this.triggerIntroOnce("selectionAmbienceTriggered", () => {
+          this.returnSelectionAudio();
+        });
+        this.introFrame = null;
         return;
       }
 
-      this.schedule(remainingMs, callback);
+      this.introFrame = window.requestAnimationFrame(tick);
     };
 
-    this.triggerIntroOnce("room-tone", () => {
-      this.playLoop("roomTone", 0.1);
-    });
-
-    scheduleAt(1800, () => {
-      this.triggerIntroOnce("camera-flash", () => {
-        this.playSfx("cameraShutter", 0.6);
-        this.playSfx("flashSoft", 0.32);
-      });
-    });
-
-    scheduleAt(3500, () => {
-      this.triggerIntroOnce("water-ripple", () => {
-        this.playLoop("waterRipple", 0);
-        this.fadeTo("waterRipple", 0.2, 2200);
-      });
-    });
-
-    scheduleAt(5000, () => {
-      this.triggerIntroOnce("distant-ocean", () => {
-        this.playLoop("distantOcean", 0);
-        this.fadeTo("distantOcean", 0.14, 2600);
-      });
-    });
-
-    scheduleAt(25000, () => {
-      this.returnSelectionAudio();
-    });
+    tick();
   }
 
   enterQuizAudio() {
     this.clearTimers();
+    this.cancelIntroTimeline();
     if (!this.enabled) return;
 
     this.fadeTo("roomTone", 0, 1200, true);
@@ -272,6 +364,7 @@ class AudioManager {
 
   returnSelectionAudio() {
     this.clearTimers();
+    this.cancelIntroTimeline();
     if (!this.enabled) return;
 
     this.fadeTo("quizBgm", 0, 1200, true);
@@ -301,6 +394,13 @@ class AudioManager {
   private clearTimers() {
     this.timers.forEach((timer) => window.clearTimeout(timer));
     this.timers.clear();
+  }
+
+  private cancelIntroTimeline() {
+    if (!this.introFrame) return;
+
+    window.cancelAnimationFrame(this.introFrame);
+    this.introFrame = null;
   }
 
   private cancelFade(key: AudioKey) {
