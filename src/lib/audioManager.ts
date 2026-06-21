@@ -35,6 +35,7 @@ class AudioManager {
   private timers = new Set<number>();
   private fadeFrames = new Map<AudioKey, number>();
   private desiredVolumes = new Map<AudioKey, number>();
+  private introTriggered = new Set<string>();
   private voiceDuckCount = 0;
 
   loadAudio(key: AudioKey) {
@@ -200,10 +201,15 @@ class AudioManager {
   prepareIntroAudio(enabled = true) {
     this.enabled = enabled;
     this.stop();
+    this.introTriggered.clear();
 
     if (!this.enabled) return;
 
-    this.loadAll();
+    this.loadAudio("roomTone");
+    this.loadAudio("cameraShutter");
+    this.loadAudio("flashSoft");
+    this.loadAudio("waterRipple");
+    this.loadAudio("distantOcean");
   }
 
   startIntroAudio(enabled = true, introStartTime = performance.now()) {
@@ -223,42 +229,29 @@ class AudioManager {
       this.schedule(remainingMs, callback);
     };
 
-    this.playLoop("roomTone", 0.18);
-
-    scheduleAt(2000, () => {
-      this.playVoice("voicePrepare", 0.75);
+    this.triggerIntroOnce("room-tone", () => {
+      this.playLoop("roomTone", 0.1);
     });
 
-    scheduleAt(5300, () => {
-      this.playSfx("cameraShutter", 0.65);
-      this.playSfx("flashSoft", 0.35);
+    scheduleAt(1800, () => {
+      this.triggerIntroOnce("camera-flash", () => {
+        this.playSfx("cameraShutter", 0.6);
+        this.playSfx("flashSoft", 0.32);
+      });
     });
 
-    scheduleAt(6300, () => {
-      this.playVoice("voiceConfirming", 0.72);
+    scheduleAt(3500, () => {
+      this.triggerIntroOnce("water-ripple", () => {
+        this.playLoop("waterRipple", 0);
+        this.fadeTo("waterRipple", 0.2, 2200);
+      });
     });
 
-    scheduleAt(8000, () => {
-      this.playLoop("waterRipple", 0);
-      this.fadeTo("waterRipple", 0.28, 4200);
-    });
-
-    scheduleAt(8300, () => {
-      this.playVoice("voiceFailed", 0.75);
-    });
-
-    scheduleAt(10300, () => {
-      this.playVoice("voiceReconfirm", 0.72);
-    });
-
-    scheduleAt(13000, () => {
-      this.playLoop("distantOcean", 0);
-      this.fadeTo("distantOcean", 0.22, 5200);
-    });
-
-    scheduleAt(18000, () => {
-      this.playSfx("cameraShutter", 0.45);
-      this.playSfx("flashSoft", 0.25);
+    scheduleAt(5000, () => {
+      this.triggerIntroOnce("distant-ocean", () => {
+        this.playLoop("distantOcean", 0);
+        this.fadeTo("distantOcean", 0.14, 2600);
+      });
     });
 
     scheduleAt(25000, () => {
@@ -316,6 +309,13 @@ class AudioManager {
       window.cancelAnimationFrame(frame);
       this.fadeFrames.delete(key);
     }
+  }
+
+  private triggerIntroOnce(key: string, callback: () => void) {
+    if (this.introTriggered.has(key)) return;
+
+    this.introTriggered.add(key);
+    callback();
   }
 
   private setTrackVolume(key: AudioKey, volume: number) {

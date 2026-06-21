@@ -597,6 +597,7 @@ export default function Home() {
       archiveSavedRef.current = false;
     });
 
+    introStartTimeRef.current = performance.now();
     audioManager.prepareIntroAudio(enableSound);
 
     const video = introVideoRef.current;
